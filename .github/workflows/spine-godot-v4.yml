@@ -343,8 +343,6 @@ jobs:
     needs: [godot-editor-windows, godot-editor-linux, godot-editor-macos, godot-template-ios, godot-template-macos, godot-template-windows, godot-template-linux, godot-template-android, godot-template-web]
     runs-on: ubuntu-latest
     if: ${{ inputs.godot_mono == false }}
-    permissions:
-      contents: write
 
     steps:
       - name: Download godot-editor-windows artifact
@@ -488,21 +486,52 @@ jobs:
           aws s3 cp godot-editor-macos.zip s3://spine-godot/$BRANCH/$GODOT_TAG/
           aws s3 cp spine-godot-templates-$BRANCH-$GODOT_TAG.tpz s3://spine-godot/$BRANCH/$GODOT_TAG/
 
-      - name: Publish GitHub release
+      - name: Publish to spine-godot-builds
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          BUILDS_TOKEN: ${{ secrets.SPINE_GODOT_BUILDS_TOKEN }}
         run: |
+          if [ -z "$BUILDS_TOKEN" ]; then
+            echo "::notice::SPINE_GODOT_BUILDS_TOKEN is not set; skipping publish."
+            exit 0
+          fi
           BRANCH=${GITHUB_REF#refs/heads/}
           TAG="spine-$BRANCH-godot-$GODOT_TAG"
+          BUILDS_REPO=Mimyr-Games-LTD/spine-godot-builds
           ASSETS=(godot-editor-windows.zip godot-editor-linux.zip godot-editor-macos.zip "spine-godot-templates-$BRANCH-$GODOT_TAG.tpz")
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          git clone --depth 1 "https://x-access-token:$BUILDS_TOKEN@github.com/$BUILDS_REPO.git" builds
+          DIR="builds/releases/$TAG"
+          mkdir -p "$DIR"
+          sha256sum "${ASSETS[@]}" > "$DIR/SHA256SUMS"
+          {
+            echo "# $TAG"
+            echo
+            echo "- Spine runtime branch: \`$BRANCH\` of \`$GITHUB_REPOSITORY\`"
+            echo "- Godot: \`$GODOT_TAG\`"
+            echo "- Source commit: \`$GITHUB_SHA\`"
+            echo "- Build run: $RUN_URL"
+            echo
+            echo "## Assets"
+            echo
+            for asset in "${ASSETS[@]}"; do
+              echo "- [\`$asset\`](https://github.com/$BUILDS_REPO/releases/download/$TAG/$asset)"
+            done
+            echo
+            echo "Checksums: [SHA256SUMS](SHA256SUMS)"
+          } > "$DIR/README.md"
+
+          git -C builds add "releases/$TAG"
+          git -C builds -c user.name="spine-godot-ci" -c user.email="spine-godot-ci@users.noreply.github.com"             commit -m "Add $TAG build from run $GITHUB_RUN_ID"
+          git -C builds push origin HEAD:main
+
+          export GH_TOKEN="$BUILDS_TOKEN" GH_REPO="$BUILDS_REPO"
+          NOTES="spine-godot editor and export templates. Build run: $RUN_URL. Manifest: releases/$TAG"
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG" "${ASSETS[@]}" --target "$GITHUB_SHA" \
-              --title "Spine $BRANCH / Godot $GODOT_TAG" \
-              --notes "spine-godot editor and export templates. Built by run $GITHUB_RUN_ID."
+            gh release create "$TAG" "${ASSETS[@]}" --target main               --title "Spine $BRANCH / Godot $GODOT_TAG" --notes "$NOTES"
           fi
 
   upload-to-s3-mono:
