@@ -453,8 +453,9 @@ jobs:
           BRANCH=${GITHUB_REF#refs/heads/}
           echo "branch: $BRANCH"
           mv godot.windows.editor.x86_64.exe godot-$BRANCH-$GODOT_TAG.exe
+          mv godot.windows.editor.x86_64.console.exe godot-$BRANCH-$GODOT_TAG.console.exe
           mv godot.linuxbsd.editor.x86_64 godot-$BRANCH-$GODOT_TAG
-          zip godot-editor-windows.zip godot-$BRANCH-$GODOT_TAG.exe
+          zip godot-editor-windows.zip godot-$BRANCH-$GODOT_TAG.exe godot-$BRANCH-$GODOT_TAG.console.exe D3D12Core.dll d3d12SDKLayers.dll
           zip godot-editor-linux.zip godot-$BRANCH-$GODOT_TAG
 
           echo "$GODOT_VERSION" > version.txt
